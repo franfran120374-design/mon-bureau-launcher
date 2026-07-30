@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
     // URL de Mon Bureau - change ici si ton adresse evolue
     private static final String MON_BUREAU_URL = "https://franfran120374-design.github.io/mon-bureau/";
     private static final long TIMEOUT_MS = 20000;
+    private static final int DEMANDE_CHOIX_APP = 101;
 
     private WebView webView;
     private TextView statusBar;
@@ -137,18 +138,30 @@ public class MainActivity extends Activity {
         dock.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(this);
 
-        for (final Dock.Raccourci r : Dock.construire(this)) {
-            View item = creerCaseDock(inflater, dock, r.label, r.icone, r.iconeSecours);
+        for (final Dock.Case c : Dock.construire(this)) {
+            View item = creerCaseDock(inflater, dock, c.label, c.icone, c.iconeSecours);
             item.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    lancer(r.intent, r.label);
+                    if (c.intent == null) {
+                        Toast.makeText(MainActivity.this,
+                                "Appui long pour choisir une application", Toast.LENGTH_SHORT).show();
+                    } else {
+                        lancer(c.intent, c.label);
+                    }
+                }
+            });
+            item.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    menuCase(c);
+                    return true;
                 }
             });
             dock.addView(item);
         }
 
-        // Derniere case : le tiroir de toutes les applications
+        // Derniere case, non modifiable : le tiroir de toutes les applications
         View tiroir = creerCaseDock(inflater, dock, "Apps", null, R.drawable.ic_apps);
         tiroir.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -159,11 +172,82 @@ public class MainActivity extends Activity {
         tiroir.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                afficherDiagnostic();
+                menuGeneral();
                 return true;
             }
         });
         dock.addView(tiroir);
+    }
+
+    /** Appui long sur une case : la changer ou la remettre par defaut. */
+    private void menuCase(final Dock.Case c) {
+        String[] options = c.personnalisee
+                ? new String[]{"Changer l'application", "Remettre par defaut"}
+                : new String[]{"Changer l'application"};
+
+        new AlertDialog.Builder(this)
+                .setTitle(c.label)
+                .setItems(options, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int quelle) {
+                        if (quelle == 0) {
+                            choisirApplication(c.index);
+                        } else {
+                            Dock.reinitialiser(MainActivity.this, c.index);
+                            construireDock();
+                            Toast.makeText(MainActivity.this,
+                                    "Case remise par defaut", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                })
+                .setNegativeButton("Annuler", null)
+                .show();
+    }
+
+    /** Appui long sur la grille : diagnostic et remise a zero globale. */
+    private void menuGeneral() {
+        new AlertDialog.Builder(this)
+                .setTitle("Mon Bureau")
+                .setItems(new String[]{"Recharger (vider le cache)",
+                                       "Remettre tout le dock par defaut",
+                                       "Diagnostic"},
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int quelle) {
+                                if (quelle == 0) {
+                                    rechargerSansCache();
+                                } else if (quelle == 1) {
+                                    Dock.toutReinitialiser(MainActivity.this);
+                                    construireDock();
+                                    Toast.makeText(MainActivity.this,
+                                            "Dock remis par defaut", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    afficherDiagnostic();
+                                }
+                            }
+                        })
+                .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    private void choisirApplication(int indexCase) {
+        Intent i = new Intent(this, AppDrawerActivity.class);
+        i.putExtra(AppDrawerActivity.EXTRA_MODE_CHOIX, true);
+        i.putExtra(AppDrawerActivity.EXTRA_INDEX_CASE, indexCase);
+        startActivityForResult(i, DEMANDE_CHOIX_APP);
+    }
+
+    @Override
+    protected void onActivityResult(int requete, int resultat, Intent data) {
+        super.onActivityResult(requete, resultat, data);
+        if (requete == DEMANDE_CHOIX_APP && resultat == RESULT_OK && data != null) {
+            String pkg = data.getStringExtra(AppDrawerActivity.RESULTAT_PACKAGE);
+            int index = data.getIntExtra(AppDrawerActivity.EXTRA_INDEX_CASE, -1);
+            if (pkg != null && index >= 0) {
+                Dock.definir(this, index, pkg);
+                construireDock();
+            }
+        }
     }
 
     private View creerCaseDock(LayoutInflater inflater, ViewGroup parent, String label,
@@ -216,7 +300,7 @@ public class MainActivity extends Activity {
         final String texte = sb.toString();
 
         new AlertDialog.Builder(this)
-                .setTitle("Mon Bureau")
+                .setTitle("Diagnostic")
                 .setMessage(texte)
                 .setPositiveButton("Recharger", new DialogInterface.OnClickListener() {
                     @Override

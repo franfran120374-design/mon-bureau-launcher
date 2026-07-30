@@ -6,75 +6,136 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.widget.AdapterView;
+import android.widget.EditText;
 import android.widget.GridView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
+/**
+ * Tiroir d'applications.
+ *
+ * Deux modes :
+ *  - normal  : taper une application la lance
+ *  - choix   : taper une application renvoie son nom de paquet
+ *                     a l'ecran d'accueil, pour l'affecter a une case du dock
+ */
 public class AppDrawerActivity extends Activity {
 
-    private List<AppInfo> apps;
+    public static final String EXTRA_MODE_CHOIX = "mode_choix";
+    public static final String EXTRA_INDEX_CASE = "index_case";
+    public static final String RESULTAT_PACKAGE = "package_choisi";
+
+    private final List<AppInfo> toutes = new ArrayList<>();
+    private final List<AppInfo> affichees = new ArrayList<>();
+    private AppAdapter adapter;
+
+    private boolean modeChoix;
+    private int indexCase;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_app_drawer);
 
-        GridView gridView = findViewById(R.id.grid_apps);
-        apps = loadInstalledApps();
+        modeChoix = getIntent().getBooleanExtra(EXTRA_MODE_CHOIX, false);
+        indexCase = getIntent().getIntExtra(EXTRA_INDEX_CASE, -1);
 
-        gridView.setAdapter(new AppAdapter(this, apps));
+        TextView titre = findViewById(R.id.titre);
+        titre.setText(modeChoix
+                ? "Choisis l'application pour cette case"
+                : "Applications");
 
-        gridView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        chargerApplications();
+        affichees.addAll(toutes);
+
+        GridView grille = findViewById(R.id.grid_apps);
+        adapter = new AppAdapter(this, affichees);
+        grille.setAdapter(adapter);
+
+        grille.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                AppInfo app = apps.get(position);
-                try {
-                    Intent launchIntent = getPackageManager().getLaunchIntentForPackage(app.packageName);
-                    if (launchIntent != null) {
-                        startActivity(launchIntent);
-                    } else {
-                        Toast.makeText(AppDrawerActivity.this,
-                                "Cette application ne peut pas etre lancee", Toast.LENGTH_SHORT).show();
-                    }
-                } catch (Exception e) {
-                    Toast.makeText(AppDrawerActivity.this,
-                            "Impossible d'ouvrir " + app.label, Toast.LENGTH_SHORT).show();
+                AppInfo app = affichees.get(position);
+                if (modeChoix) {
+                    Intent resultat = new Intent();
+                    resultat.putExtra(RESULTAT_PACKAGE, app.packageName);
+                    resultat.putExtra(EXTRA_INDEX_CASE, indexCase);
+                    setResult(RESULT_OK, resultat);
+                    finish();
+                } else {
+                    lancer(app);
                 }
             }
         });
+
+        EditText recherche = findViewById(R.id.recherche);
+        recherche.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {
+                filtrer(s.toString());
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
     }
 
-    private List<AppInfo> loadInstalledApps() {
-        List<AppInfo> result = new ArrayList<>();
+    private void filtrer(String texte) {
+        String q = texte.trim().toLowerCase(Locale.getDefault());
+        affichees.clear();
+        if (q.isEmpty()) {
+            affichees.addAll(toutes);
+        } else {
+            for (AppInfo a : toutes) {
+                if (a.label.toLowerCase(Locale.getDefault()).contains(q)) {
+                    affichees.add(a);
+                }
+            }
+        }
+        adapter.notifyDataSetChanged();
+    }
+
+    private void lancer(AppInfo app) {
+        try {
+            Intent lancement = getPackageManager().getLaunchIntentForPackage(app.packageName);
+            if (lancement != null) {
+                startActivity(lancement);
+            } else {
+                Toast.makeText(this, "Cette application ne peut pas etre lancee",
+                        Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Impossible d'ouvrir " + app.label, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void chargerApplications() {
         try {
             PackageManager pm = getPackageManager();
 
-            Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
-            mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            Intent principal = new Intent(Intent.ACTION_MAIN, null);
+            principal.addCategory(Intent.CATEGORY_LAUNCHER);
 
-            List<ResolveInfo> resolveInfos = pm.queryIntentActivities(mainIntent, 0);
-            String ownPackage = getPackageName();
+            List<ResolveInfo> resultats = pm.queryIntentActivities(principal, 0);
+            String monPackage = getPackageName();
 
-            for (ResolveInfo info : resolveInfos) {
+            for (ResolveInfo info : resultats) {
                 ApplicationInfo appInfo = info.activityInfo.applicationInfo;
-                String packageName = appInfo.packageName;
+                String pkg = appInfo.packageName;
+                if (pkg.equals(monPackage)) continue;
 
-                // On n'affiche pas Mon Bureau dans son propre tiroir
-                if (packageName.equals(ownPackage)) continue;
-
-                result.add(new AppInfo(
-                        info.loadLabel(pm).toString(),
-                        packageName,
-                        info.loadIcon(pm)));
+                toutes.add(new AppInfo(info.loadLabel(pm).toString(), pkg, info.loadIcon(pm)));
             }
 
-            Collections.sort(result, new Comparator<AppInfo>() {
+            Collections.sort(toutes, new Comparator<AppInfo>() {
                 @Override
                 public int compare(AppInfo a, AppInfo b) {
                     return a.label.compareToIgnoreCase(b.label);
@@ -83,7 +144,6 @@ public class AppDrawerActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "Erreur au chargement des applications", Toast.LENGTH_LONG).show();
         }
-        return result;
     }
 
     @Override

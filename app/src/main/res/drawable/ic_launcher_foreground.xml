@@ -4,17 +4,17 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Écran -->
+    <!-- Ecran -->
     <path
         android:fillColor="#F5F5F7"
         android:pathData="M30,32 H78 A6,6 0 0 1 84,38 V66 A6,6 0 0 1 78,72 H30 A6,6 0 0 1 24,66 V38 A6,6 0 0 1 30,32 Z" />
 
-    <!-- Barre écran -->
+    <!-- Barre ecran -->
     <path
         android:fillColor="#1c1c1e"
         android:pathData="M30,38 H78 V44 H30 Z" />
 
-    <!-- Pied de l'écran -->
+    <!-- Pied de l'ecran -->
     <path
         android:fillColor="#F5F5F7"
         android:pathData="M48,72 H60 V80 H48 Z" />

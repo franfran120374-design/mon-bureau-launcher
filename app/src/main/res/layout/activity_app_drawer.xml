@@ -1,21 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="#1c1c1e">
+
+    <TextView
+        android:id="@+id/titre"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="36dp"
+        android:paddingBottom="10dp"
+        android:textColor="#F5F5F7"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/recherche"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_recherche"
+        android:hint="Rechercher une application"
+        android:textColorHint="#8E8E93"
+        android:textColor="#F5F5F7"
+        android:textSize="15sp"
+        android:padding="12dp"
+        android:singleLine="true"
+        android:imeOptions="actionSearch"
+        android:inputType="text" />
 
     <GridView
         android:id="@+id/grid_apps"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:numColumns="4"
         android:verticalSpacing="20dp"
         android:horizontalSpacing="8dp"
-        android:paddingTop="48dp"
-        android:paddingBottom="48dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="32dp"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:gravity="center"
         android:stretchMode="columnWidth" />
 
-</FrameLayout>
+</LinearLayout>
