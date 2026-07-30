@@ -2,14 +2,17 @@ package com.monbureau.launcher;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
@@ -19,7 +22,8 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -30,15 +34,11 @@ public class MainActivity extends Activity {
 
     // URL de Mon Bureau - change ici si ton adresse evolue
     private static final String MON_BUREAU_URL = "https://franfran120374-design.github.io/mon-bureau/";
-
-    private static final int SWIPE_MIN_DISTANCE = 60;
-    private static final int SWIPE_MAX_OFF_PATH = 200;
-    private static final int SWIPE_THRESHOLD_VELOCITY = 100;
     private static final long TIMEOUT_MS = 20000;
 
     private WebView webView;
     private TextView statusBar;
-    private GestureDetector gestureDetector;
+    private LinearLayout dock;
 
     private final List<String> journal = new ArrayList<>();
     private boolean pageChargee = false;
@@ -51,7 +51,28 @@ public class MainActivity extends Activity {
 
         webView = findViewById(R.id.webview);
         statusBar = findViewById(R.id.status_bar);
+        dock = findViewById(R.id.dock);
 
+        configurerWebView();
+        construireDock();
+
+        if (savedInstanceState == null) {
+            webView.loadUrl(MON_BUREAU_URL);
+        }
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!pageChargee) {
+                    statut("Aucune reponse apres 20s - appui long sur la grille pour le detail");
+                }
+            }
+        }, TIMEOUT_MS);
+    }
+
+    // ---------------------------------------------------------------- WebView
+
+    private void configurerWebView() {
         webView.setBackgroundColor(Color.parseColor("#1c1c1e"));
 
         WebSettings s = webView.getSettings();
@@ -65,128 +86,111 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setSupportMultipleWindows(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
-        note("WebView UA: " + s.getUserAgentString());
-
         webView.setWebViewClient(new WebViewClient() {
-
             @Override
             public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
                 note("Chargement demarre: " + url);
-                statut("Chargement...");
             }
 
             @Override
             public void onPageFinished(WebView v, String url) {
                 pageChargee = true;
                 note("Page terminee: " + url);
-                // Verifie que la page contient reellement quelque chose
-                v.evaluateJavascript(
-                        "(function(){return document.body?document.body.innerText.length:-1;})();",
-                        new android.webkit.ValueCallback<String>() {
-                            @Override
-                            public void onReceiveValue(String value) {
-                                note("Taille du contenu: " + value);
-                                if ("-1".equals(value) || "0".equals(value)) {
-                                    statut("Page chargee mais VIDE - appui long sur le bouton pour le detail");
-                                } else {
-                                    masquerStatut();
-                                }
-                            }
-                        });
+                masquerStatut();
             }
 
             @Override
             public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                String msg = "Erreur " + err.getErrorCode() + " : " + err.getDescription()
-                        + " sur " + req.getUrl();
-                note(msg);
+                String msg = "Erreur " + err.getErrorCode() + " : " + err.getDescription();
+                note(msg + " sur " + req.getUrl());
                 if (req.isForMainFrame()) statut(msg);
             }
 
             @Override
             public void onReceivedHttpError(WebView v, WebResourceRequest req, WebResourceResponse resp) {
-                String msg = "HTTP " + resp.getStatusCode() + " sur " + req.getUrl();
-                note(msg);
-                if (req.isForMainFrame()) statut(msg);
+                note("HTTP " + resp.getStatusCode() + " sur " + req.getUrl());
+                if (req.isForMainFrame()) statut("HTTP " + resp.getStatusCode());
             }
 
             @Override
-            public void onReceivedSslError(WebView v, SslErrorHandler handler, android.net.http.SslError error) {
-                note("Erreur SSL: " + error.toString());
+            public void onReceivedSslError(WebView v, SslErrorHandler h, android.net.http.SslError e) {
+                note("Erreur SSL: " + e.toString());
                 statut("Erreur SSL - certificat refuse");
-                handler.cancel();
+                h.cancel();
             }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public void onProgressChanged(WebView v, int progress) {
-                if (!pageChargee) statut("Chargement " + progress + "%");
-            }
-
-            @Override
             public boolean onConsoleMessage(ConsoleMessage cm) {
-                note("JS[" + cm.messageLevel() + "] " + cm.message()
-                        + " (ligne " + cm.lineNumber() + ")");
+                note("JS[" + cm.messageLevel() + "] " + cm.message() + " (ligne " + cm.lineNumber() + ")");
                 return true;
             }
         });
+    }
 
-        if (savedInstanceState == null) {
-            webView.loadUrl(MON_BUREAU_URL);
+    // ------------------------------------------------------------------- Dock
+
+    private void construireDock() {
+        dock.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(this);
+
+        for (final Dock.Raccourci r : Dock.construire(this)) {
+            View item = creerCaseDock(inflater, dock, r.label, r.icone, r.iconeSecours);
+            item.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    lancer(r.intent, r.label);
+                }
+            });
+            dock.addView(item);
         }
 
-        // Chien de garde : si rien n'a charge au bout de 20s, on le dit
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (!pageChargee) {
-                    statut("Aucune reponse apres 20s - appui long sur le bouton pour le detail");
-                }
-            }
-        }, TIMEOUT_MS);
-
-        ImageButton btn = findViewById(R.id.btn_app_drawer);
-        btn.setOnClickListener(new View.OnClickListener() {
+        // Derniere case : le tiroir de toutes les applications
+        View tiroir = creerCaseDock(inflater, dock, "Apps", null, R.drawable.ic_apps);
+        tiroir.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openAppDrawer();
+                lancer(new Intent(MainActivity.this, AppDrawerActivity.class), "le tiroir");
             }
         });
-        btn.setOnLongClickListener(new View.OnLongClickListener() {
+        tiroir.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
                 afficherDiagnostic();
                 return true;
             }
         });
-
-        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
-                if (e1 == null || e2 == null) return false;
-                float dy = e1.getY() - e2.getY();
-                float dx = Math.abs(e1.getX() - e2.getX());
-                if (dy > SWIPE_MIN_DISTANCE && dx < SWIPE_MAX_OFF_PATH
-                        && Math.abs(vy) > SWIPE_THRESHOLD_VELOCITY) {
-                    openAppDrawer();
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        findViewById(R.id.edge_swipe_zone).setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                gestureDetector.onTouchEvent(event);
-                return true;
-            }
-        });
+        dock.addView(tiroir);
     }
+
+    private View creerCaseDock(LayoutInflater inflater, ViewGroup parent, String label,
+                               android.graphics.drawable.Drawable icone, int iconeSecours) {
+        View item = inflater.inflate(R.layout.item_dock, parent, false);
+        ImageView iv = item.findViewById(R.id.dock_icon);
+        TextView tv = item.findViewById(R.id.dock_label);
+
+        if (icone != null) {
+            iv.setImageDrawable(icone);
+        } else {
+            iv.setImageResource(iconeSecours);
+        }
+        tv.setText(label);
+        return item;
+    }
+
+    private void lancer(Intent intent, String quoi) {
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Impossible d'ouvrir " + quoi, Toast.LENGTH_SHORT).show();
+            note("Echec lancement " + quoi + " : " + e.getMessage());
+        }
+    }
+
+    // -------------------------------------------------------------- Diagnostic
 
     private void note(String ligne) {
         journal.add(ligne);
@@ -205,50 +209,62 @@ public class MainActivity extends Activity {
 
     private void afficherDiagnostic() {
         StringBuilder sb = new StringBuilder();
-        sb.append("URL cible :\n").append(MON_BUREAU_URL).append("\n\n");
+        sb.append("URL : ").append(MON_BUREAU_URL).append("\n");
         sb.append("Page chargee : ").append(pageChargee).append("\n\n");
-        sb.append("--- Journal (").append(journal.size()).append(" entrees) ---\n");
-        for (String l : journal) {
-            sb.append("\n").append(l).append("\n");
-        }
+        sb.append("--- Journal (").append(journal.size()).append(") ---\n");
+        for (String l : journal) sb.append("\n").append(l).append("\n");
         final String texte = sb.toString();
 
         new AlertDialog.Builder(this)
-                .setTitle("Diagnostic Mon Bureau")
+                .setTitle("Mon Bureau")
                 .setMessage(texte)
-                .setPositiveButton("Copier", new android.content.DialogInterface.OnClickListener() {
+                .setPositiveButton("Recharger", new DialogInterface.OnClickListener() {
                     @Override
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        android.content.ClipboardManager cm =
-                                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(android.content.ClipData.newPlainText("diagnostic", texte));
-                        Toast.makeText(MainActivity.this, "Copie dans le presse-papier", Toast.LENGTH_SHORT).show();
+                    public void onClick(DialogInterface d, int w) {
+                        rechargerSansCache();
                     }
                 })
-                .setNeutralButton("Recharger", new android.content.DialogInterface.OnClickListener() {
+                .setNeutralButton("Copier", new DialogInterface.OnClickListener() {
                     @Override
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        pageChargee = false;
-                        journal.clear();
-                        webView.loadUrl(MON_BUREAU_URL);
+                    public void onClick(DialogInterface d, int w) {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("diagnostic", texte));
+                        Toast.makeText(MainActivity.this, "Copie", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("Fermer", null)
                 .show();
     }
 
-    private void openAppDrawer() {
-        try {
-            startActivity(new Intent(this, AppDrawerActivity.class));
-        } catch (Exception e) {
-            Toast.makeText(this, "Impossible d'ouvrir le tiroir : " + e.getMessage(),
-                    Toast.LENGTH_LONG).show();
-        }
+    /** Vide le cache puis recharge : utile apres une mise a jour du site. */
+    private void rechargerSansCache() {
+        pageChargee = false;
+        journal.clear();
+        webView.clearCache(true);
+        webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+        webView.loadUrl(MON_BUREAU_URL);
+        // On repasse en cache normal pour les navigations suivantes
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+            }
+        }, 3000);
+        Toast.makeText(this, "Cache vide, rechargement...", Toast.LENGTH_SHORT).show();
     }
+
+    // ----------------------------------------------------------------- Cycle
 
     @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) webView.goBack();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Appui sur le bouton Accueil alors qu'on est deja la : on remonte en haut
+        if (webView != null) webView.scrollTo(0, 0);
     }
 
     @Override

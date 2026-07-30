@@ -1,45 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="#1c1c1e">
 
-    <WebView
-        android:id="@+id/webview"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <!-- Bandeau de diagnostic : visible pendant le chargement, masque au succes -->
+    <!-- Bandeau d'erreur : masque par defaut, apparait seulement en cas de probleme -->
     <TextView
         android:id="@+id/status_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top"
         android:background="#CC000000"
         android:textColor="#FFD60A"
         android:textSize="12sp"
         android:padding="10dp"
-        android:text="Demarrage..."
-        android:visibility="visible" />
+        android:visibility="gone" />
 
-    <!-- Zone invisible en bord bas : swipe up pour ouvrir le tiroir d'apps -->
-    <View
-        android:id="@+id/edge_swipe_zone"
+    <!-- Mon Bureau occupe tout l'espace restant, sans etre masque par le dock -->
+    <WebView
+        android:id="@+id/webview"
         android:layout_width="match_parent"
-        android:layout_height="28dp"
-        android:layout_gravity="bottom" />
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-    <!-- Bouton tiroir d'apps : appui long = diagnostic -->
-    <ImageButton
-        android:id="@+id/btn_app_drawer"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/bg_fab_circle"
-        android:src="@drawable/ic_apps"
-        android:padding="16dp"
-        android:contentDescription="@string/app_drawer_content_description"
-        android:elevation="8dp" />
+    <!-- Dock : raccourcis rapides vers les apps essentielles du telephone -->
+    <LinearLayout
+        android:id="@+id/dock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#F0000000"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:gravity="center" />
 
-</FrameLayout>
+</LinearLayout>

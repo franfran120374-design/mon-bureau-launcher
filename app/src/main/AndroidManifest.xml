@@ -4,11 +4,33 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Nécessaire pour lister les apps installées (visibilité des paquets, Android 11+) -->
+    <!--
+      Visibilite des paquets (obligatoire depuis Android 11) :
+      permet de lister les applications installees et de resoudre
+      les applications par defaut utilisees par le dock.
+    -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_MESSAGING" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_CONTACTS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_BROWSER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
         </intent>
     </queries>
 
@@ -25,13 +47,13 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:launchMode="singleTask">
 
-            <!-- Icône normale dans le tiroir d'applications -->
+            <!-- Icone normale dans le tiroir d'applications -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Rend l'appli sélectionnable comme écran d'accueil (HOME) -->
+            <!-- Rend l'appli selectionnable comme ecran d'accueil -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
