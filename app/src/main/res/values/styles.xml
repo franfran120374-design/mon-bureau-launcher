@@ -1,7 +1,7 @@
 ﻿<resources>
-    <!-- Doit heriter d un theme AppCompat car les activites etendent AppCompatActivity -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Theme systeme natif : aucune dependance a appcompat -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowActionBar">false</item>
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
     </style>
 </resources>

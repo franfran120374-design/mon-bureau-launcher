@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id 'com.android.application'
 }
 
@@ -10,8 +10,8 @@ android {
         applicationId "com.monbureau.launcher"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "1.2"
     }
 
     buildTypes {
@@ -26,11 +26,7 @@ android {
     }
 }
 
+// Aucune dependance externe : pas d'appcompat, donc pas de conflit kotlin
+// et pas de contrainte de theme AppCompat.
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-}
-
-configurations.all {
-    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
 }
