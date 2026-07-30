@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Zone invisible en bord bas d'écran : swipe up pour ouvrir le tiroir d'apps -->
+    <View
+        android:id="@+id/edge_swipe_zone"
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:layout_gravity="bottom" />
+
+    <!-- Bouton dédié, toujours visible, ouvre le tiroir d'apps -->
+    <ImageButton
+        android:id="@+id/btn_app_drawer"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_fab_circle"
+        android:src="@drawable/ic_apps"
+        android:padding="16dp"
+        android:contentDescription="@string/app_drawer_content_description"
+        android:elevation="8dp" />
+
+</FrameLayout>

@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Écran -->
+    <path
+        android:fillColor="#F5F5F7"
+        android:pathData="M30,32 H78 A6,6 0 0 1 84,38 V66 A6,6 0 0 1 78,72 H30 A6,6 0 0 1 24,66 V38 A6,6 0 0 1 30,32 Z" />
+
+    <!-- Barre écran -->
+    <path
+        android:fillColor="#1c1c1e"
+        android:pathData="M30,38 H78 V44 H30 Z" />
+
+    <!-- Pied de l'écran -->
+    <path
+        android:fillColor="#F5F5F7"
+        android:pathData="M48,72 H60 V80 H48 Z" />
+    <path
+        android:fillColor="#F5F5F7"
+        android:pathData="M40,80 H68 A2,2 0 0 1 70,82 V84 A2,2 0 0 1 68,86 H40 A2,2 0 0 1 38,84 V82 A2,2 0 0 1 40,80 Z" />
+</vector>

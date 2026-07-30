@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Mon Bureau</string>
+    <string name="app_drawer_content_description">Ouvrir le tiroir d\'applications</string>
+</resources>
