@@ -1,4 +1,4 @@
-﻿package com.monbureau.launcher;
+package com.monbureau.launcher;
 
 import android.app.Activity;
 import android.content.Intent;
