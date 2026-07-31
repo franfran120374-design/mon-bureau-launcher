@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Zone invisible en bord bas d'écran : swipe up pour ouvrir le tiroir d'apps -->
+    <View
+        android:id="@+id/edge_swipe_zone"
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:layout_gravity="bottom" />
+
+    <!-- Barre de raccourcis : 4 emplacements configurables. Appui simple
+         = ouvre l'action. Appui long = propose de la remplacer. -->
+    <LinearLayout
+        android:id="@+id/dock_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="84dp"
+        android:background="@drawable/bg_dock_pill"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:elevation="8dp">
+
+        <ImageButton
+            android:id="@+id/dock_slot_0"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_margin="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="12dp"
+            android:contentDescription="Raccourci 1" />
+
+        <ImageButton
+            android:id="@+id/dock_slot_1"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_margin="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="12dp"
+            android:contentDescription="Raccourci 2" />
+
+        <ImageButton
+            android:id="@+id/dock_slot_2"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_margin="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="12dp"
+            android:contentDescription="Raccourci 3" />
+
+        <ImageButton
+            android:id="@+id/dock_slot_3"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_margin="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="12dp"
+            android:contentDescription="Raccourci 4" />
+
+    </LinearLayout>
+
+    <!-- Bouton dédié, toujours visible, ouvre le tiroir d'apps -->
+    <ImageButton
+        android:id="@+id/btn_app_drawer"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_fab_circle"
+        android:src="@drawable/ic_apps"
+        android:padding="16dp"
+        android:contentDescription="@string/app_drawer_content_description"
+        android:elevation="8dp" />
+
+</FrameLayout>
