@@ -1,13 +1,16 @@
 package com.monbureau.launcher;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -25,17 +28,16 @@ public class MainActivity extends Activity {
 
     // ---- Rechargement automatique ----
     // Si tu reviens sur l'accueil apres plus de 10 minutes d'absence, la
-    // page est rechargee silencieusement, cache navigateur ignore.
-    //
-    // Toute cette logique est entouree de try/catch : une erreur ici est
-    // journalisee et ignoree, elle ne doit jamais faire planter l'ecran
-    // d'accueil pour une simple fonctionnalite de confort.
+    // page est rechargee silencieusement, cache navigateur ignore. Toute
+    // cette logique est protegee : une erreur ici est journalisee et
+    // ignoree, elle ne doit jamais faire planter l'ecran d'accueil.
     private static final long INTERVALLE_RECHARGEMENT_MS = 10 * 60 * 1000; // 10 minutes
     private static final String PREFS = "mon_bureau_launcher_prefs";
     private static final String CLE_DERNIER_CHARGEMENT = "dernier_chargement";
 
     private WebView webView;
     private GestureDetector gestureDetector;
+    private DockManager dockManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,7 +55,26 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
-        webView.setWebViewClient(new WebViewClient());
+        // Sans ce client personnalise, les liens tel:/sms:/mailto: du site
+        // (y compris ceux de la nouvelle barre de raccourcis web) restent
+        // muets a l'interieur de la WebView : elle essaie de les "afficher"
+        // comme une page au lieu de les transmettre au telephone.
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                String schema = uri.getScheme();
+                if (schema != null && !schema.equals("http") && !schema.equals("https")) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (ActivityNotFoundException e) {
+                        Log.w(TAG, "Aucune appli pour ouvrir : " + uri);
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
 
         if (savedInstanceState == null) {
             webView.loadUrl(MON_BUREAU_URL);
@@ -62,6 +83,14 @@ public class MainActivity extends Activity {
 
         ImageButton btnAppDrawer = findViewById(R.id.btn_app_drawer);
         btnAppDrawer.setOnClickListener(v -> openAppDrawer());
+
+        ImageButton[] slotsDock = new ImageButton[] {
+                findViewById(R.id.dock_slot_0),
+                findViewById(R.id.dock_slot_1),
+                findViewById(R.id.dock_slot_2),
+                findViewById(R.id.dock_slot_3)
+        };
+        dockManager = new DockManager(this, slotsDock);
 
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -82,6 +111,14 @@ public class MainActivity extends Activity {
 
         View edgeSwipeZone = findViewById(R.id.edge_swipe_zone);
         edgeSwipeZone.setOnTouchListener((v, event) -> gestureDetector.onTouchEvent(event));
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (dockManager != null) {
+            dockManager.onActivityResult(requestCode, resultCode, data);
+        }
     }
 
     @Override

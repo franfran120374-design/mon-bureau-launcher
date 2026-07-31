@@ -1,12 +1,13 @@
 package com.monbureau.launcher;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.widget.GridView;
-import android.app.Activity;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,10 +16,24 @@ import java.util.List;
 
 public class AppDrawerActivity extends Activity {
 
+    // Si present et vrai dans l'intent de lancement : au lieu d'ouvrir
+    // l'appli choisie, on renvoie son nom de paquet a l'ecran appelant
+    // (utilise par DockManager pour assigner un raccourci).
+    public static final String EXTRA_MODE_CHOIX = "mode_choix";
+    public static final String EXTRA_PACKAGE_CHOISI = "package_choisi";
+    public static final String EXTRA_LABEL_CHOISI = "label_choisi";
+
+    private boolean modeChoix = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_app_drawer);
+
+        modeChoix = getIntent().getBooleanExtra(EXTRA_MODE_CHOIX, false);
+        if (modeChoix) {
+            Toast.makeText(this, "Choisis une application pour ce raccourci", Toast.LENGTH_SHORT).show();
+        }
 
         GridView gridView = findViewById(R.id.grid_apps);
         List<AppInfo> apps = loadInstalledApps();
@@ -28,9 +43,17 @@ public class AppDrawerActivity extends Activity {
 
         gridView.setOnItemClickListener((parent, view, position, id) -> {
             AppInfo app = apps.get(position);
-            Intent launchIntent = getPackageManager().getLaunchIntentForPackage(app.packageName);
-            if (launchIntent != null) {
-                startActivity(launchIntent);
+            if (modeChoix) {
+                Intent resultat = new Intent();
+                resultat.putExtra(EXTRA_PACKAGE_CHOISI, app.packageName);
+                resultat.putExtra(EXTRA_LABEL_CHOISI, app.label);
+                setResult(Activity.RESULT_OK, resultat);
+                finish();
+            } else {
+                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(app.packageName);
+                if (launchIntent != null) {
+                    startActivity(launchIntent);
+                }
             }
         });
     }
@@ -71,6 +94,9 @@ public class AppDrawerActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (modeChoix) {
+            setResult(Activity.RESULT_CANCELED);
+        }
         // Retour = fermer le tiroir et revenir à Mon Bureau
         finish();
     }
