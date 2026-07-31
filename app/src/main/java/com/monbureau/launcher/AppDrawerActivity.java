@@ -6,14 +6,14 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.widget.GridView;
-import androidx.appcompat.app.AppCompatActivity;
+import android.app.Activity;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class AppDrawerActivity extends AppCompatActivity {
+public class AppDrawerActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
