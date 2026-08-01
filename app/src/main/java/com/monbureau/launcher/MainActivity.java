@@ -10,9 +10,11 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebStorage;
 import android.webkit.WebViewClient;
 import android.widget.ImageButton;
 
@@ -54,6 +56,32 @@ public class MainActivity extends Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setAllowFileAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
+
+        // --- Connexion Google dans une WebView (correctif majeur) ---------
+        // Google REFUSE l'authentification OAuth quand il detecte une WebView.
+        // Il la reconnait au marqueur "; wv" present dans le user-agent.
+        // En le retirant, la page de connexion Google s'affiche normalement
+        // et le compte cesse de se deconnecter sur le telephone.
+        try {
+            String ua = settings.getUserAgentString();
+            if (ua != null) {
+                ua = ua.replace("; wv", "").replace("Version/4.0 ", "");
+                settings.setUserAgentString(ua);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "user-agent non modifie: " + e.getMessage());
+        }
+
+        // --- Cookies persistants ------------------------------------------
+        // Sans ceci, la session Google est perdue des qu'Android recycle le
+        // processus du launcher (ce qui arrive plusieurs fois par jour).
+        try {
+            CookieManager cookies = CookieManager.getInstance();
+            cookies.setAcceptCookie(true);
+            cookies.setAcceptThirdPartyCookies(webView, true);
+        } catch (Exception e) {
+            Log.w(TAG, "cookies: " + e.getMessage());
+        }
 
         // Sans ce client personnalise, les liens tel:/sms:/mailto: du site
         // (y compris ceux de la nouvelle barre de raccourcis web) restent
@@ -119,6 +147,32 @@ public class MainActivity extends Activity {
         if (dockManager != null) {
             dockManager.onActivityResult(requestCode, resultCode, data);
         }
+    }
+
+    // Android tue regulierement le processus du launcher. Sans ce vidage
+    // explicite, les dernieres ecritures (localStorage, cookies de session)
+    // restent en memoire et disparaissent : c'est la cause des sauvegardes
+    // perdues et des deconnexions Google apres une mise en veille.
+    @Override
+    protected void onPause() {
+        super.onPause();
+        try {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "try{window.MBSync&&window.MBSync.flushOnExit&&window.MBSync.flushOnExit();}catch(e){}",
+                    null);
+            }
+            CookieManager.getInstance().flush();
+            WebStorage.getInstance().getOrigins(null);
+        } catch (Exception e) {
+            Log.w(TAG, "flush onPause: " + e.getMessage());
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        try { CookieManager.getInstance().flush(); } catch (Exception e) { }
     }
 
     @Override
