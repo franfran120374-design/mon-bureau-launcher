@@ -2,473 +2,400 @@ package com.monbureau.launcher;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.net.Uri;
-import android.os.Build;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.webkit.CookieManager;
+import android.view.ViewGroup;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.webkit.ConsoleMessage;
+import android.webkit.GeolocationPermissions;
+import android.webkit.SslErrorHandler;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
 
-    private static final String TAG = "MonBureauLauncher";
-
-    // URL de Mon Bureau — change ici si ton adresse evolue
+    // URL de Mon Bureau - change ici si ton adresse evolue
     private static final String MON_BUREAU_URL = "https://franfran120374-design.github.io/mon-bureau/";
-
-    private static final int SWIPE_MIN_DISTANCE = 60;
-    private static final int SWIPE_MAX_OFF_PATH = 200;
-    private static final int SWIPE_THRESHOLD_VELOCITY = 100;
-
-    // ---- Rechargement automatique ----
-    // Si tu reviens sur l'accueil apres plus de 10 minutes d'absence, la
-    // page est rechargee silencieusement. Toute cette logique est protegee :
-    // une erreur ici est journalisee et ignoree, elle ne doit jamais faire
-    // planter l'ecran d'accueil.
-    private static final long INTERVALLE_RECHARGEMENT_MS = 10 * 60 * 1000; // 10 minutes
-    private static final String PREFS = "mon_bureau_launcher_prefs";
-    private static final String CLE_DERNIER_CHARGEMENT = "dernier_chargement";
-    private static final String CLE_DERNIER_CRASH = "dernier_crash";
+    private static final long TIMEOUT_MS = 20000;
+    private static final int DEMANDE_CHOIX_APP = 101;
+    private static final int DEMANDE_GEOLOC = 102;
 
     private WebView webView;
-    private GestureDetector gestureDetector;
-    private DockManager dockManager;
+    private TextView statusBar;
+    private LinearLayout dock;
 
-    // =====================================================================
-    //  DEMARRAGE
-    // =====================================================================
+    private final List<String> journal = new ArrayList<>();
+    private boolean pageChargee = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Le filet de securite doit etre pose EN PREMIER : a partir d'ici,
-        // toute erreur non rattrapee est enregistree avant que le systeme
-        // ne ferme l'application. On pourra la relire au demarrage suivant.
-        installerCaptureDesCrashs();
-
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webview);
-        configurerWebView(savedInstanceState);
+        statusBar = findViewById(R.id.status_bar);
+        dock = findViewById(R.id.dock);
 
-        // Le dock, le tiroir d'applis et les gestes sont des elements de
-        // confort. Si l'un d'eux echoue, l'ecran d'accueil doit rester
-        // utilisable : on ne laisse jamais le telephone sans accueil.
-        try {
-            configurerDockEtGestes();
-        } catch (Throwable t) {
-            Log.e(TAG, "Dock/gestes indisponibles", t);
-            enregistrerCrash(t);
+        configurerWebView();
+        construireDock();
+
+        // Pont vers le service de notifications : expose window.MBVelo au site.
+        webView.addJavascriptInterface(new PontVelo(this), "MBVelo");
+
+        // La geolocalisation d'un WebView exige la permission systeme ET
+        // l'accord explicite donne dans onGeolocationPermissionsShowPrompt.
+        // Sans les deux, la tuile velo ne trouve jamais ta position.
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+            }, DEMANDE_GEOLOC);
         }
-
-        afficherRapportDeCrashSiPresent();
-    }
-
-    // =====================================================================
-    //  WEBVIEW
-    // =====================================================================
-    private void configurerWebView(Bundle savedInstanceState) {
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setAllowFileAccess(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-
-        // Permet d'inspecter la page depuis le PC (chrome://inspect) quand
-        // le telephone est branche en USB avec le debogage active.
-        try {
-            WebView.setWebContentsDebuggingEnabled(true);
-        } catch (Throwable t) {
-            Log.w(TAG, "debogage distant indisponible: " + t.getMessage());
-        }
-
-        // --- Connexion Google dans une WebView -----------------------------
-        // Google refuse l'authentification OAuth quand il detecte une WebView.
-        // Il la reconnait au marqueur "; wv" present dans le user-agent.
-        // En le retirant, la page de connexion Google s'affiche normalement.
-        try {
-            String ua = settings.getUserAgentString();
-            if (ua != null) {
-                ua = ua.replace("; wv", "").replace("Version/4.0 ", "");
-                settings.setUserAgentString(ua);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "user-agent non modifie: " + t.getMessage());
-        }
-
-        // --- Cookies persistants -------------------------------------------
-        // Sans ceci, la session Google est perdue des qu'Android recycle le
-        // processus du launcher.
-        try {
-            CookieManager cookies = CookieManager.getInstance();
-            cookies.setAcceptCookie(true);
-            cookies.setAcceptThirdPartyCookies(webView, true);
-        } catch (Throwable t) {
-            Log.w(TAG, "cookies: " + t.getMessage());
-        }
-
-        // Sans ce client personnalise, les liens tel:/sms:/mailto: du site
-        // restent muets a l'interieur de la WebView : elle essaie de les
-        // "afficher" comme une page au lieu de les transmettre au telephone.
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                String schema = uri.getScheme();
-                if (schema != null && !schema.equals("http") && !schema.equals("https")) {
-                    try {
-                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                    } catch (ActivityNotFoundException e) {
-                        Log.w(TAG, "Aucune appli pour ouvrir : " + uri);
-                    }
-                    return true;
-                }
-                return false;
-            }
-        });
 
         if (savedInstanceState == null) {
             webView.loadUrl(MON_BUREAU_URL);
-            marquerChargement();
         }
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!pageChargee) {
+                    statut("Aucune reponse apres 20s - appui long sur la grille pour le detail");
+                }
+            }
+        }, TIMEOUT_MS);
     }
 
-    // =====================================================================
-    //  DOCK + TIROIR D'APPLIS + GESTES
-    // =====================================================================
-    private void configurerDockEtGestes() {
-        ImageButton btnAppDrawer = findViewById(R.id.btn_app_drawer);
-        btnAppDrawer.setOnClickListener(v -> openAppDrawer());
+    // ---------------------------------------------------------------- WebView
 
-        // Appui long sur le bouton du tiroir = menu de depannage.
-        // C'est le seul moyen d'acceder aux diagnostics sans PC.
-        btnAppDrawer.setOnLongClickListener(v -> {
-            afficherMenuDepannage();
-            return true;
+    private void configurerWebView() {
+        webView.setBackgroundColor(Color.parseColor("#1c1c1e"));
+
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setLoadWithOverviewMode(true);
+        s.setUseWideViewPort(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setAllowFileAccess(true);
+        s.setAllowContentAccess(true);
+        s.setJavaScriptCanOpenWindowsAutomatically(true);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
+                note("Chargement demarre: " + url);
+            }
+
+            @Override
+            public void onPageFinished(WebView v, String url) {
+                pageChargee = true;
+                note("Page terminee: " + url);
+                masquerStatut();
+            }
+
+            @Override
+            public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
+                String msg = "Erreur " + err.getErrorCode() + " : " + err.getDescription();
+                note(msg + " sur " + req.getUrl());
+                if (req.isForMainFrame()) statut(msg);
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView v, WebResourceRequest req, WebResourceResponse resp) {
+                note("HTTP " + resp.getStatusCode() + " sur " + req.getUrl());
+                if (req.isForMainFrame()) statut("HTTP " + resp.getStatusCode());
+            }
+
+            @Override
+            public void onReceivedSslError(WebView v, SslErrorHandler h, android.net.http.SslError e) {
+                note("Erreur SSL: " + e.toString());
+                statut("Erreur SSL - certificat refuse");
+                h.cancel();
+            }
         });
 
-        ImageButton[] slotsDock = new ImageButton[] {
-                findViewById(R.id.dock_slot_0),
-                findViewById(R.id.dock_slot_1),
-                findViewById(R.id.dock_slot_2),
-                findViewById(R.id.dock_slot_3)
-        };
-        dockManager = new DockManager(this, slotsDock);
-
-        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+        webView.setWebChromeClient(new WebChromeClient() {
             @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                if (e1 == null || e2 == null) return false;
-                float deltaY = e1.getY() - e2.getY();
-                float deltaX = Math.abs(e1.getX() - e2.getX());
-                boolean isSwipeUp = deltaY > SWIPE_MIN_DISTANCE
-                        && deltaX < SWIPE_MAX_OFF_PATH
-                        && Math.abs(velocityY) > SWIPE_THRESHOLD_VELOCITY;
-                if (isSwipeUp) {
-                    openAppDrawer();
+            public boolean onConsoleMessage(ConsoleMessage cm) {
+                note("JS[" + cm.messageLevel() + "] " + cm.message() + " (ligne " + cm.lineNumber() + ")");
+                return true;
+            }
+
+            /**
+             * Sans cette methode, Android refuse la geolocalisation en silence :
+             * aucune erreur, aucun message, la position n'arrive simplement
+             * jamais. Mon Bureau etant un site de confiance charge par nos
+             * soins, on accorde directement, sans redemander a chaque fois.
+             */
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origine,
+                                                           GeolocationPermissions.Callback rappel) {
+                boolean autorise = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED;
+                if (rappel != null) rappel.invoke(origine, autorise, false);
+                if (!autorise) note("Geoloc refusee : permission systeme absente");
+            }
+        });
+
+        // Autorise le WebView a demander la position au systeme
+        webView.getSettings().setGeolocationEnabled(true);
+    }
+
+    // ------------------------------------------------------------------- Dock
+
+    private void construireDock() {
+        dock.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(this);
+
+        for (final Dock.Case c : Dock.construire(this)) {
+            View item = creerCaseDock(inflater, dock, c.label, c.icone, c.iconeSecours);
+            item.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (c.intent == null) {
+                        Toast.makeText(MainActivity.this,
+                                "Appui long pour choisir une application", Toast.LENGTH_SHORT).show();
+                    } else {
+                        lancer(c.intent, c.label);
+                    }
+                }
+            });
+            item.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    menuCase(c);
                     return true;
                 }
-                return false;
+            });
+            dock.addView(item);
+        }
+
+        // Derniere case, non modifiable : le tiroir de toutes les applications
+        View tiroir = creerCaseDock(inflater, dock, "Apps", null, R.drawable.ic_apps);
+        tiroir.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                lancer(new Intent(MainActivity.this, AppDrawerActivity.class), "le tiroir");
             }
         });
-
-        View edgeSwipeZone = findViewById(R.id.edge_swipe_zone);
-        edgeSwipeZone.setOnTouchListener((v, event) -> gestureDetector.onTouchEvent(event));
-    }
-
-    private void openAppDrawer() {
-        try {
-            startActivity(new Intent(this, AppDrawerActivity.class));
-        } catch (Throwable t) {
-            Log.e(TAG, "Ouverture du tiroir impossible", t);
-            enregistrerCrash(t);
-            Toast.makeText(this, "Tiroir d'applis indisponible", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        try {
-            if (dockManager != null) {
-                dockManager.onActivityResult(requestCode, resultCode, data);
+        tiroir.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                menuGeneral();
+                return true;
             }
-        } catch (Throwable t) {
-            Log.e(TAG, "onActivityResult", t);
-        }
+        });
+        dock.addView(tiroir);
     }
 
-    // =====================================================================
-    //  CYCLE DE VIE
-    // =====================================================================
-    //
-    //  CORRECTIF PRINCIPAL DE CETTE VERSION
-    //  ------------------------------------
-    //  La version precedente appelait ici :
-    //      WebStorage.getInstance().getOrigins(null);
-    //  Android execute cet appel EN DIFFERE puis fait
-    //  callback.onReceiveValue(...) sur l'objet fourni. Comme l'objet
-    //  fourni etait null, une NullPointerException etait levee APRES la
-    //  sortie du bloc try/catch : impossible a rattraper, l'application
-    //  se fermait. Et comme onPause() se declenche chaque fois qu'on
-    //  quitte l'accueil, le launcher plantait a repetition.
-    //
-    //  Cet appel ne servait a rien : il listait des quotas de stockage,
-    //  il ne "vidait" rien du tout. Il est purement et simplement retire.
-    //  La persistance reelle est assuree par CookieManager.flush() et par
-    //  la WebView elle-meme, qui ecrit le localStorage sur le disque.
-    //
+    /** Appui long sur une case : la changer ou la remettre par defaut. */
+    private void menuCase(final Dock.Case c) {
+        String[] options = c.personnalisee
+                ? new String[]{"Changer l'application", "Remettre par defaut"}
+                : new String[]{"Changer l'application"};
+
+        new AlertDialog.Builder(this)
+                .setTitle(c.label)
+                .setItems(options, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int quelle) {
+                        if (quelle == 0) {
+                            choisirApplication(c.index);
+                        } else {
+                            Dock.reinitialiser(MainActivity.this, c.index);
+                            construireDock();
+                            Toast.makeText(MainActivity.this,
+                                    "Case remise par defaut", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                })
+                .setNegativeButton("Annuler", null)
+                .show();
+    }
+
+    /** Appui long sur la grille : diagnostic et remise a zero globale. */
+    private void menuGeneral() {
+        new AlertDialog.Builder(this)
+                .setTitle("Mon Bureau")
+                .setItems(new String[]{"Recharger (vider le cache)",
+                                       "Remettre tout le dock par defaut",
+                                       "Diagnostic"},
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface d, int quelle) {
+                                if (quelle == 0) {
+                                    rechargerSansCache();
+                                } else if (quelle == 1) {
+                                    Dock.toutReinitialiser(MainActivity.this);
+                                    construireDock();
+                                    Toast.makeText(MainActivity.this,
+                                            "Dock remis par defaut", Toast.LENGTH_SHORT).show();
+                                } else {
+                                    afficherDiagnostic();
+                                }
+                            }
+                        })
+                .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    private void choisirApplication(int indexCase) {
+        Intent i = new Intent(this, AppDrawerActivity.class);
+        i.putExtra(AppDrawerActivity.EXTRA_MODE_CHOIX, true);
+        i.putExtra(AppDrawerActivity.EXTRA_INDEX_CASE, indexCase);
+        startActivityForResult(i, DEMANDE_CHOIX_APP);
+    }
+
     @Override
-    protected void onPause() {
-        super.onPause();
-        try {
-            if (webView != null) {
-                webView.evaluateJavascript(
-                        "try{window.MBSync&&window.MBSync.flushOnExit&&window.MBSync.flushOnExit();}catch(e){}",
-                        null);
+    protected void onActivityResult(int requete, int resultat, Intent data) {
+        super.onActivityResult(requete, resultat, data);
+        if (requete == DEMANDE_CHOIX_APP && resultat == RESULT_OK && data != null) {
+            String pkg = data.getStringExtra(AppDrawerActivity.RESULTAT_PACKAGE);
+            int index = data.getIntExtra(AppDrawerActivity.EXTRA_INDEX_CASE, -1);
+            if (pkg != null && index >= 0) {
+                Dock.definir(this, index, pkg);
+                construireDock();
             }
-        } catch (Throwable t) {
-            Log.w(TAG, "flush JS onPause: " + t.getMessage());
-        }
-        try {
-            CookieManager.getInstance().flush();
-        } catch (Throwable t) {
-            Log.w(TAG, "flush cookies onPause: " + t.getMessage());
         }
     }
 
-    @Override
-    protected void onStop() {
-        super.onStop();
+    private View creerCaseDock(LayoutInflater inflater, ViewGroup parent, String label,
+                               android.graphics.drawable.Drawable icone, int iconeSecours) {
+        View item = inflater.inflate(R.layout.item_dock, parent, false);
+        ImageView iv = item.findViewById(R.id.dock_icon);
+        TextView tv = item.findViewById(R.id.dock_label);
+
+        if (icone != null) {
+            iv.setImageDrawable(icone);
+        } else {
+            iv.setImageResource(iconeSecours);
+        }
+        tv.setText(label);
+        return item;
+    }
+
+    private void lancer(Intent intent, String quoi) {
         try {
-            CookieManager.getInstance().flush();
-        } catch (Throwable t) {
-            Log.w(TAG, "flush cookies onStop: " + t.getMessage());
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, "Impossible d'ouvrir " + quoi, Toast.LENGTH_SHORT).show();
+            note("Echec lancement " + quoi + " : " + e.getMessage());
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        try {
-            if (webView != null && dernierChargementDepasse()) {
-                webView.clearCache(false);
-                webView.loadUrl(MON_BUREAU_URL);
-                marquerChargement();
+    // -------------------------------------------------------------- Diagnostic
+
+    private void note(String ligne) {
+        journal.add(ligne);
+    }
+
+    private void statut(String texte) {
+        if (statusBar != null) {
+            statusBar.setVisibility(View.VISIBLE);
+            statusBar.setText(texte);
+        }
+    }
+
+    private void masquerStatut() {
+        if (statusBar != null) statusBar.setVisibility(View.GONE);
+    }
+
+    private void afficherDiagnostic() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("URL : ").append(MON_BUREAU_URL).append("\n");
+        sb.append("Page chargee : ").append(pageChargee).append("\n\n");
+        sb.append("--- Journal (").append(journal.size()).append(") ---\n");
+        for (String l : journal) sb.append("\n").append(l).append("\n");
+        final String texte = sb.toString();
+
+        new AlertDialog.Builder(this)
+                .setTitle("Diagnostic")
+                .setMessage(texte)
+                .setPositiveButton("Recharger", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        rechargerSansCache();
+                    }
+                })
+                .setNeutralButton("Copier", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("diagnostic", texte));
+                        Toast.makeText(MainActivity.this, "Copie", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    /** Vide le cache puis recharge : utile apres une mise a jour du site. */
+    private void rechargerSansCache() {
+        pageChargee = false;
+        journal.clear();
+        webView.clearCache(true);
+        webView.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+        webView.loadUrl(MON_BUREAU_URL);
+        // On repasse en cache normal pour les navigations suivantes
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
             }
-        } catch (Throwable t) {
-            Log.e(TAG, "Rechargement automatique ignore suite a une erreur", t);
-        }
+        }, 3000);
+        Toast.makeText(this, "Cache vide, rechargement...", Toast.LENGTH_SHORT).show();
     }
+
+    // ----------------------------------------------------------------- Cycle
 
     @Override
     public void onBackPressed() {
-        // Comportement launcher : le bouton retour navigue dans la page,
-        // il ne quitte jamais l'appli (sinon le telephone n'a plus d'accueil).
-        try {
-            if (webView != null && webView.canGoBack()) {
-                webView.goBack();
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "onBackPressed: " + t.getMessage());
-        }
+        if (webView != null && webView.canGoBack()) webView.goBack();
     }
 
     @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        try {
-            if (webView != null) webView.saveState(outState);
-        } catch (Throwable t) {
-            Log.w(TAG, "saveState: " + t.getMessage());
-        }
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Appui sur le bouton Accueil alors qu'on est deja la : on remonte en haut
+        if (webView != null) webView.scrollTo(0, 0);
     }
 
     @Override
-    protected void onRestoreInstanceState(Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        try {
-            if (webView != null) webView.restoreState(savedInstanceState);
-        } catch (Throwable t) {
-            Log.w(TAG, "restoreState: " + t.getMessage());
-        }
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        if (webView != null) webView.saveState(out);
     }
 
-    // =====================================================================
-    //  MEMOIRE DU DERNIER CHARGEMENT
-    // =====================================================================
-    private boolean dernierChargementDepasse() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-            long dernier = prefs.getLong(CLE_DERNIER_CHARGEMENT, 0);
-            return System.currentTimeMillis() - dernier > INTERVALLE_RECHARGEMENT_MS;
-        } catch (Throwable t) {
-            Log.e(TAG, "Lecture des preferences impossible", t);
-            return false;
-        }
-    }
-
-    private void marquerChargement() {
-        try {
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putLong(CLE_DERNIER_CHARGEMENT, System.currentTimeMillis())
-                    .apply();
-        } catch (Throwable t) {
-            Log.e(TAG, "Ecriture des preferences impossible", t);
-        }
-    }
-
-    // =====================================================================
-    //  BOITE NOIRE : capture et relecture des plantages
-    // =====================================================================
-    private void installerCaptureDesCrashs() {
-        try {
-            final Thread.UncaughtExceptionHandler precedent =
-                    Thread.getDefaultUncaughtExceptionHandler();
-            Thread.setDefaultUncaughtExceptionHandler((thread, erreur) -> {
-                try {
-                    enregistrerCrash(erreur);
-                } catch (Throwable ignore) {
-                    // On ne fait jamais echouer l'enregistrement du crash.
-                }
-                if (precedent != null) {
-                    precedent.uncaughtException(thread, erreur);
-                }
-            });
-        } catch (Throwable t) {
-            Log.w(TAG, "capture des crashs indisponible: " + t.getMessage());
-        }
-    }
-
-    private void enregistrerCrash(Throwable erreur) {
-        try {
-            StringWriter sw = new StringWriter();
-            erreur.printStackTrace(new PrintWriter(sw));
-            String horodatage = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.FRANCE)
-                    .format(new Date());
-            String rapport = "Date : " + horodatage
-                    + "\nAndroid : " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"
-                    + "\nAppareil : " + Build.MANUFACTURER + " " + Build.MODEL
-                    + "\n\n" + sw;
-            // commit() et non apply() : le processus peut mourir dans la
-            // milliseconde qui suit, l'ecriture doit etre immediate.
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putString(CLE_DERNIER_CRASH, rapport)
-                    .commit();
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private void afficherRapportDeCrashSiPresent() {
-        try {
-            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-            final String rapport = prefs.getString(CLE_DERNIER_CRASH, null);
-            if (rapport == null || rapport.isEmpty()) return;
-
-            new AlertDialog.Builder(this)
-                    .setTitle("Mon Bureau a rencontre une erreur")
-                    .setMessage(rapport)
-                    .setPositiveButton("Copier", (d, w) -> copierDansPressePapier(rapport))
-                    .setNegativeButton("Effacer", (d, w) -> effacerRapportDeCrash())
-                    .setNeutralButton("Plus tard", null)
-                    .show();
-        } catch (Throwable t) {
-            Log.w(TAG, "affichage du rapport impossible: " + t.getMessage());
-        }
-    }
-
-    private void effacerRapportDeCrash() {
-        try {
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .remove(CLE_DERNIER_CRASH)
-                    .apply();
-        } catch (Throwable ignore) {
-        }
-    }
-
-    private void copierDansPressePapier(String texte) {
-        try {
-            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("Mon Bureau - erreur", texte));
-                Toast.makeText(this, "Copie. Colle-le dans la conversation.", Toast.LENGTH_LONG).show();
-            }
-        } catch (Throwable ignore) {
-        }
-    }
-
-    // =====================================================================
-    //  MENU DE DEPANNAGE (appui long sur le bouton du tiroir d'applis)
-    // =====================================================================
-    private void afficherMenuDepannage() {
-        try {
-            final String[] choix = {
-                    "Recharger la page",
-                    "Vider le cache et recharger",
-                    "Voir la derniere erreur",
-                    "Effacer le rapport d'erreur"
-            };
-            new AlertDialog.Builder(this)
-                    .setTitle("Depannage — Mon Bureau")
-                    .setItems(choix, (d, index) -> {
-                        switch (index) {
-                            case 0:
-                                if (webView != null) webView.reload();
-                                break;
-                            case 1:
-                                if (webView != null) {
-                                    webView.clearCache(true);
-                                    webView.loadUrl(MON_BUREAU_URL);
-                                    marquerChargement();
-                                    Toast.makeText(this, "Cache vide", Toast.LENGTH_SHORT).show();
-                                }
-                                break;
-                            case 2:
-                                String r = getSharedPreferences(PREFS, MODE_PRIVATE)
-                                        .getString(CLE_DERNIER_CRASH, null);
-                                if (r == null || r.isEmpty()) {
-                                    Toast.makeText(this, "Aucune erreur enregistree", Toast.LENGTH_SHORT).show();
-                                } else {
-                                    afficherRapportDeCrashSiPresent();
-                                }
-                                break;
-                            case 3:
-                                effacerRapportDeCrash();
-                                Toast.makeText(this, "Rapport efface", Toast.LENGTH_SHORT).show();
-                                break;
-                        }
-                    })
-                    .setNegativeButton("Fermer", null)
-                    .show();
-        } catch (Throwable t) {
-            Log.w(TAG, "menu depannage: " + t.getMessage());
-        }
+    @Override
+    protected void onRestoreInstanceState(Bundle in) {
+        super.onRestoreInstanceState(in);
+        if (webView != null) webView.restoreState(in);
     }
 }
