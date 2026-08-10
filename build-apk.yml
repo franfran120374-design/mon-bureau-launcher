@@ -1,0 +1,56 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ------------------------------------------------------------------
+      # CLE DE SIGNATURE PERMANENTE
+      # ------------------------------------------------------------------
+      # Sans cette etape, chaque compilation utilisait une cle "debug"
+      # generee au hasard sur le serveur GitHub, donc DIFFERENTE a chaque
+      # fois. Android considere alors chaque APK comme une application
+      # etrangere : impossible de mettre a jour par-dessus, il faut
+      # desinstaller — ce qui efface toutes les donnees du launcher.
+      #
+      # Ici on restaure toujours LA MEME cle, stockee de facon chiffree
+      # dans les "Secrets" du depot. L'APK garde donc la meme identite
+      # pour toujours, et les mises a jour s'installent par-dessus sans
+      # rien perdre.
+      # ------------------------------------------------------------------
+      - name: Restaurer la cle de signature
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$GITHUB_WORKSPACE/monbureau-release.jks"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build release APK
+        env:
+          MB_KEYSTORE_FILE: ${{ github.workspace }}/monbureau-release.jks
+          MB_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          MB_KEY_ALIAS: monbureau
+          MB_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mon-bureau-launcher-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
