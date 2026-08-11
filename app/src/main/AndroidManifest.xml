@@ -5,14 +5,13 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
-      Geolocalisation : indispensable pour que la tuile velo trouve les
-      stations autour de toi. Sans ces deux lignes, le WebView ne peut
-      meme pas demander la position.
+      Geolocalisation. Sans ces deux lignes, le WebView ne peut meme pas
+      demander la position : Android refuse en silence, sans message.
     -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Notifications affichees par Mon Bureau lui-meme (Android 13 et plus) -->
+    <!-- Notifications de Mon Bureau lui-meme (Android 13 et plus) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
@@ -77,26 +76,6 @@
             android:name=".AppDrawerActivity"
             android:exported="false"
             android:theme="@style/AppTheme" />
-
-        <!--
-          Lecture des notifications des autres applications.
-
-          android:permission est impose par Android : seul le systeme a le
-          droit de demarrer ce service. exported="true" ne veut donc pas dire
-          "ouvert a tous", mais "visible du systeme", ce qui est obligatoire.
-
-          Le service reste inerte tant que tu ne l'as pas autorise a la main
-          dans Parametres > Acces speciaux > Acces aux notifications.
-        -->
-        <service
-            android:name=".VeloNotificationService"
-            android:label="Mon Bureau - trajets velo"
-            android:exported="true"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
 
     </application>
 
