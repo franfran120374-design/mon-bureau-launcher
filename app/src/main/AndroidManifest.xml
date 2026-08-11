@@ -15,6 +15,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      Bulle flottante : affiche le chronometre par-dessus les autres
+      applications, y compris veloToulouse. Android ne l'accorde jamais
+      automatiquement, il faut l'autoriser une fois a la main.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!--
       Visibilite des paquets (obligatoire depuis Android 11) :
       permet de lister les applications installees et de resoudre
       les applications par defaut utilisees par le dock.
@@ -76,6 +85,21 @@
             android:name=".AppDrawerActivity"
             android:exported="false"
             android:theme="@style/AppTheme" />
+
+
+        <!--
+          Le service qui dessine la bulle. Il est ecrit a l'interieur de
+          MainActivity, d'ou le nom avec un dollar : c'est la facon
+          d'appeler une classe rangee dans une autre.
+        -->
+        <service
+            android:name="com.monbureau.launcher.MainActivity$VeloOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Chronometre de trajet velo affiche par-dessus les autres applications" />
+        </service>
 
     </application>
 
