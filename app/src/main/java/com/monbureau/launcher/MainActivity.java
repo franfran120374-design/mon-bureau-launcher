@@ -738,21 +738,39 @@ public class MainActivity extends Activity {
         private Handler horloge;
         private Runnable battement;
 
+        public static final String ACTION_FIN = "com.monbureau.launcher.VELO_FIN";
+
         private long debut;
         private int gratuitMin;
         private double tarif;
         private int dureeTranche;
+        private int trancheMin;      // meme valeur que dureeTranche, nom court
+        private int derniereMinute = -1;
 
         @Override
         public IBinder onBind(Intent i) { return null; }
 
         @Override
         public int onStartCommand(Intent intent, int flags, int startId) {
+            // Bouton "Repose" de la notification : on note la fin du trajet
+            // pour que Mon Bureau la prenne en compte a sa prochaine ouverture,
+            // puis on s'arrete. Aucun deverrouillage necessaire.
+            if (intent != null && ACTION_FIN.equals(intent.getAction())) {
+                try {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putLong("velo_fin_demandee", System.currentTimeMillis()).apply();
+                } catch (Throwable ignored) { }
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+
             SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
             debut        = p.getLong("bulle_debut", System.currentTimeMillis());
             gratuitMin   = p.getInt("bulle_gratuit", 30);
             dureeTranche = p.getInt("bulle_tranche", 30);
-            tarif        = Double.parseDouble(p.getString("bulle_tarif", "1"));
+            trancheMin   = dureeTranche;
+            try { tarif = Double.parseDouble(p.getString("bulle_tarif", "1")); }
+            catch (Throwable t) { tarif = 1.0; }
 
             demarrerAuPremierPlan();
             if (bulle == null) construireBulle();
@@ -763,33 +781,80 @@ public class MainActivity extends Activity {
         // ---------------------------------------------------- notification
 
         private void demarrerAuPremierPlan() {
+            construireNotification(true);
+        }
+
+        /**
+         * La notification du trajet.
+         *
+         * A velo, on ne veut pas avoir a deverrouiller le telephone pour
+         * savoir ou on en est. Trois reglages rendent la notification
+         * lisible directement sur l'ecran de verrouillage :
+         *
+         *   IMPORTANCE_DEFAULT   la notification apparait sur l'ecran
+         *                        verrouille (IMPORTANCE_LOW l'y masque)
+         *   VISIBILITY_PUBLIC    son contenu s'affiche en entier, meme
+         *                        quand le telephone est verrouille
+         *   setUsesChronometer   le compteur est mis a jour par Android
+         *                        lui-meme, chaque seconde, sans que notre
+         *                        application ait besoin de tourner
+         *
+         * Le bouton "Repose" arrete le trajet sans rien deverrouiller.
+         */
+        private void construireNotification(boolean premierAppel) {
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (nm != null && nm.getNotificationChannel(CANAL) == null) {
                 NotificationChannel c = new NotificationChannel(
-                        CANAL, "Trajet velo", NotificationManager.IMPORTANCE_LOW);
-                c.setDescription("Affiche le chronometre pendant un trajet");
+                        CANAL, "Trajet velo", NotificationManager.IMPORTANCE_DEFAULT);
+                c.setDescription("Chronometre visible pendant un trajet");
                 c.setShowBadge(false);
+                c.setSound(null, null);          // silencieux : pas de bip a chaque mise a jour
+                c.enableVibration(false);
+                c.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
                 nm.createNotificationChannel(c);
             }
 
             Intent ouvrir = new Intent(this, MainActivity.class);
             ouvrir.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            PendingIntent pi = PendingIntent.getActivity(this, 0, ouvrir,
+            PendingIntent piOuvrir = PendingIntent.getActivity(this, 0, ouvrir,
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+            Intent fin = new Intent(this, VeloOverlayService.class).setAction(ACTION_FIN);
+            PendingIntent piFin = PendingIntent.getService(this, 2, fin,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+            long sec = (System.currentTimeMillis() - debut) / 1000;
+            double depassement = (sec / 60.0) - gratuitMin;
+            double cout = depassement <= 0 ? 0 : Math.ceil(depassement / trancheMin) * tarif;
+            long resteMin = (gratuitMin * 60L - sec) / 60;
+
+            String texte = cout > 0
+                    ? String.format(java.util.Locale.FRANCE, "Depassement - %.2f EUR", cout).replace('.', ',')
+                    : "Encore " + Math.max(0, resteMin) + " min incluses";
 
             Notification n = new Notification.Builder(this, CANAL)
                     .setContentTitle("Trajet velo en cours")
-                    .setContentText("Le chronometre tourne")
+                    .setContentText(texte)
                     .setSmallIcon(android.R.drawable.ic_menu_compass)
-                    .setContentIntent(pi)
+                    .setContentIntent(piOuvrir)
                     .setOngoing(true)
+                    .setOnlyAlertOnce(true)
+                    .setUsesChronometer(true)
+                    .setWhen(debut)
+                    .setShowWhen(true)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setCategory(Notification.CATEGORY_STOPWATCH)
+                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Repose", piFin)
                     .build();
 
-            try {
-                startForeground(NOTIF_ID, n);
-            } catch (Throwable t) {
-                // Sur certaines versions, le type de service doit etre precise
-                try { startForeground(NOTIF_ID, n, 1073741824); } catch (Throwable ignored) { }
+            if (premierAppel) {
+                try {
+                    startForeground(NOTIF_ID, n);
+                } catch (Throwable t) {
+                    try { startForeground(NOTIF_ID, n, 1073741824); } catch (Throwable ignored) { }
+                }
+            } else if (nm != null) {
+                try { nm.notify(NOTIF_ID, n); } catch (Throwable ignored) { }
             }
         }
 
@@ -932,9 +997,17 @@ public class MainActivity extends Activity {
         }
 
         private void majAffichage() {
-            if (vChrono == null) return;
             long sec = (System.currentTimeMillis() - debut) / 1000;
             if (sec < 0) sec = 0;
+
+            // Texte de la notification : une fois par minute suffit.
+            int minute = (int) (sec / 60);
+            if (minute != derniereMinute) {
+                derniereMinute = minute;
+                construireNotification(false);
+            }
+
+            if (vChrono == null) return;
 
             long h = sec / 3600, m = (sec % 3600) / 60, r = sec % 60;
             String t = h > 0
