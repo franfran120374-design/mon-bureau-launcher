@@ -1,2 +1,32 @@
+// -----------------------------------------------------------------------------
+// settings.gradle
+// -----------------------------------------------------------------------------
+// Ce fichier dit a Gradle quels sont les modules du projet, et surtout OU
+// aller chercher les outils de compilation.
+//
+// Le bloc pluginManagement est indispensable depuis Gradle 7 : sans lui,
+// la ligne "id 'com.android.application'" du fichier app/build.gradle ne
+// trouve rien, et le build echoue avec le message
+//     Plugin [id: 'com.android.application'] was not found
+// meme si tout le reste du projet est correct.
+// -----------------------------------------------------------------------------
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    // Les dependances se declarent ici plutot que dans chaque module.
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
 rootProject.name = "mon-bureau-launcher"
 include ':app'

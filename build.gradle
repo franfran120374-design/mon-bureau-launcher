@@ -1,16 +1,13 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.5.0'
-    }
-}
+// -----------------------------------------------------------------------------
+// build.gradle  (RACINE du projet)
+// -----------------------------------------------------------------------------
+// Ne PAS confondre avec app/build.gradle, qui decrit l'application elle-meme.
+// Celui-ci ne fait qu'annoncer la version des outils Android utilises.
+//
+// La declaration se fait desormais ici, avec "apply false" : le plugin est
+// mis a disposition du projet, et c'est app/build.gradle qui l'active.
+// -----------------------------------------------------------------------------
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
+plugins {
+    id 'com.android.application' version '8.5.0' apply false
 }
